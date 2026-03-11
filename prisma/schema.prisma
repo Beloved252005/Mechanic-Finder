@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  MOTORIST
+  MECHANIC
+  ADMIN
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BookingStatus {
+  PENDING
+  APPROVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(MOTORIST)
+  createdAt DateTime @default(now())
+
+  mechanicProfile    MechanicProfile?
+  bookingsAsMotorist Booking[]          @relation("MotoristBookings")
+  reviewsAsMotorist  Review[]           @relation("MotoristReviews")
+  messages           Message[]          @relation("UserMessages")
+  pushSubscriptions  PushSubscription[]
+}
+
+model MechanicProfile {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  specialty          String?
+  location           String?
+  phone              String?
+  documentUrl        String?
+  verificationStatus VerificationStatus @default(PENDING)
+  averageRating      Float              @default(0)
+  totalReviews       Int                @default(0)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings        Booking[]        @relation("MechanicBookings")
+  reviews         Review[]         @relation("MechanicReviews")
+  locationUpdates LocationUpdate[]
+}
+
+model Booking {
+  id         String        @id @default(cuid())
+  motoristId String
+  mechanicId String
+  date       String
+  time       String
+  status     BookingStatus @default(PENDING)
+  createdAt  DateTime      @default(now())
+
+  motorist        User             @relation("MotoristBookings", fields: [motoristId], references: [id], onDelete: Cascade)
+  mechanic        MechanicProfile  @relation("MechanicBookings", fields: [mechanicId], references: [id], onDelete: Cascade)
+  review          Review?
+  messages        Message[]
+  locationUpdates LocationUpdate[]
+
+  @@unique([mechanicId, date, time])
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  bookingId  String   @unique
+  motoristId String
+  mechanicId String
+  rating     Int
+  comment    String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  booking  Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  motorist User            @relation("MotoristReviews", fields: [motoristId], references: [id], onDelete: Cascade)
+  mechanic MechanicProfile @relation("MechanicReviews", fields: [mechanicId], references: [id], onDelete: Cascade)
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  bookingId String
+  senderId  String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  sender  User    @relation("UserMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, createdAt])
+}
+
+model LocationUpdate {
+  id         String   @id @default(cuid())
+  bookingId  String
+  mechanicId String
+  latitude   Float
+  longitude  Float
+  createdAt  DateTime @default(now())
+
+  booking  Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  mechanic MechanicProfile @relation(fields: [mechanicId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, createdAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @db.Text
+  p256dh    String   @db.Text
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
