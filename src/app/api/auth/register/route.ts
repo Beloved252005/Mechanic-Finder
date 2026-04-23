@@ -1,19 +1,14 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 import { prisma } from "@/lib/db";
+import { registerSchema, formatZodError } from "@/lib/validations";
+import { ZodError } from "zod";
 
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { name, email, password, role } = body;
-
-        if (!name || !email || !password) {
-            return NextResponse.json({ error: "Name, email, and password are required" }, { status: 400 });
-        }
-
-        if (role && !["MOTORIST", "MECHANIC"].includes(role)) {
-            return NextResponse.json({ error: "Invalid role" }, { status: 400 });
-        }
+        const parsed = registerSchema.parse(body);
+        const { name, email, password, role } = parsed;
 
         const existing = await prisma.user.findUnique({ where: { email } });
         if (existing) {
@@ -43,6 +38,9 @@ export async function POST(request: Request) {
             { status: 201 }
         );
     } catch (error) {
+        if (error instanceof ZodError) {
+            return NextResponse.json({ error: formatZodError(error) }, { status: 400 });
+        }
         console.error("Registration error:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }

@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { sendPushToUser } from "@/lib/push";
+import { messageSchema, formatZodError } from "@/lib/validations";
+import { ZodError } from "zod";
 
 export async function GET(request: Request) {
     try {
@@ -59,11 +61,8 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { bookingId, content } = body;
-
-        if (!bookingId || !content?.trim()) {
-            return NextResponse.json({ error: "bookingId and content are required" }, { status: 400 });
-        }
+        const parsed = messageSchema.parse(body);
+        const { bookingId, content } = parsed;
 
         // Authorization check
         const booking = await prisma.booking.findUnique({
@@ -86,7 +85,7 @@ export async function POST(request: Request) {
             data: {
                 bookingId,
                 senderId: session.user.id,
-                content: content.trim(),
+                content,
             },
             include: {
                 sender: { select: { id: true, name: true, role: true } },
@@ -101,7 +100,7 @@ export async function POST(request: Request) {
                     : booking.motoristId;
             await sendPushToUser(recipientId, {
                 title: `New message from ${session.user.name}`,
-                body: content.trim().substring(0, 100),
+                body: content.substring(0, 100),
                 url: "/dashboard",
             });
         } catch {
@@ -110,6 +109,9 @@ export async function POST(request: Request) {
 
         return NextResponse.json(message, { status: 201 });
     } catch (error) {
+        if (error instanceof ZodError) {
+            return NextResponse.json({ error: formatZodError(error) }, { status: 400 });
+        }
         console.error("Error creating message:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }

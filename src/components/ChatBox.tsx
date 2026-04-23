@@ -184,8 +184,8 @@ const styles: Record<string, React.CSSProperties> = {
         lineHeight: "1.4",
     },
     ownBubble: {
-        background: "rgba(99, 102, 241, 0.2)",
-        border: "1px solid rgba(99, 102, 241, 0.3)",
+        background: "rgba(37, 99, 235, 0.15)",
+        border: "1px solid rgba(37, 99, 235, 0.25)",
         borderBottomRightRadius: "4px",
     },
     otherBubble: {

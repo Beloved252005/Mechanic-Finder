@@ -3,8 +3,9 @@
 import { useSession } from "next-auth/react";
 import { useState, useEffect, useCallback } from "react";
 import ChatBox from "@/components/ChatBox";
-import LocationMap from "@/components/LocationMap";
+import LocationMap from "@/components/LocationMapDynamic";
 import NotificationButton from "@/components/NotificationButton";
+import MechanicMapDynamic from "@/components/MechanicMapDynamic";
 
 interface MechanicProfile {
     id: string;
@@ -32,12 +33,9 @@ export default function MotoristDashboard() {
     const { data: session } = useSession();
     const [tab, setTab] = useState<"search" | "bookings">("search");
 
-    // Search state
-    const [mechanics, setMechanics] = useState<MechanicProfile[]>([]);
-    const [locationFilter, setLocationFilter] = useState("");
-    const [statusFilter, setStatusFilter] = useState("APPROVED");
-    const [ratingFilter, setRatingFilter] = useState("");
-    const [loadingMechanics, setLoadingMechanics] = useState(true);
+    // Booking modal accepts both MechanicProfile (from old list) or map mechanic shape
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [bookingMechanic, setBookingMechanic] = useState<any>(null);
 
     // Booking state
     const [bookings, setBookings] = useState<Booking[]>([]);
@@ -45,6 +43,7 @@ export default function MotoristDashboard() {
 
     // Booking modal
     const [bookingModal, setBookingModal] = useState<MechanicProfile | null>(null);
+    const [bookingMechanicName, setBookingMechanicName] = useState("");
     const [bookingDate, setBookingDate] = useState("");
     const [bookingTime, setBookingTime] = useState("");
     const [bookingError, setBookingError] = useState("");
@@ -62,17 +61,14 @@ export default function MotoristDashboard() {
     // GPS tracking modal
     const [trackingBooking, setTrackingBooking] = useState<Booking | null>(null);
 
-    const fetchMechanics = useCallback(async () => {
-        setLoadingMechanics(true);
-        const params = new URLSearchParams();
-        if (locationFilter) params.set("location", locationFilter);
-        if (statusFilter) params.set("status", statusFilter);
-        if (ratingFilter) params.set("minRating", ratingFilter);
-        const res = await fetch(`/api/mechanics?${params}`);
-        const data = await res.json();
-        setMechanics(data);
-        setLoadingMechanics(false);
-    }, [locationFilter, statusFilter, ratingFilter]);
+    // Handler for when a mechanic is selected from the map
+    const handleMapBook = useCallback((mechanic: { id: string; name: string }) => {
+        // Build a minimal MechanicProfile shape to open the booking modal
+        setBookingModal({ id: mechanic.id } as MechanicProfile);
+        setBookingMechanicName(mechanic.name);
+        setBookingError("");
+        setBookingSuccess("");
+    }, []);
 
     const fetchBookings = useCallback(async () => {
         setLoadingBookings(true);
@@ -81,10 +77,6 @@ export default function MotoristDashboard() {
         setBookings(data);
         setLoadingBookings(false);
     }, []);
-
-    useEffect(() => {
-        fetchMechanics();
-    }, [fetchMechanics]);
 
     useEffect(() => {
         if (tab === "bookings") fetchBookings();
@@ -208,85 +200,7 @@ export default function MotoristDashboard() {
             </div>
 
             {tab === "search" && (
-                <>
-                    <div className="filter-bar">
-                        <input
-                            className="form-input"
-                            placeholder="Filter by location..."
-                            value={locationFilter}
-                            onChange={(e) => setLocationFilter(e.target.value)}
-                        />
-                        <select
-                            className="form-select"
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                        >
-                            <option value="">All Statuses</option>
-                            <option value="APPROVED">Verified Only</option>
-                            <option value="PENDING">Pending</option>
-                        </select>
-                        <select
-                            className="form-select"
-                            value={ratingFilter}
-                            onChange={(e) => setRatingFilter(e.target.value)}
-                        >
-                            <option value="">Any Rating</option>
-                            <option value="4">4+ Stars</option>
-                            <option value="3">3+ Stars</option>
-                        </select>
-                        <button className="btn btn-primary btn-sm" onClick={fetchMechanics}>
-                            Search
-                        </button>
-                    </div>
-
-                    {loadingMechanics ? (
-                        <div className="loading-center"><span className="spinner" /></div>
-                    ) : mechanics.length === 0 ? (
-                        <div className="empty-state">
-                            <div className="empty-state-icon">🔧</div>
-                            <p className="empty-state-text">No mechanics found. Try adjusting your filters.</p>
-                        </div>
-                    ) : (
-                        <div className="grid-2">
-                            {mechanics.map((m) => (
-                                <div key={m.id} className="card mechanic-card">
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
-                                        <div>
-                                            <h3 className="mechanic-name">{m.user.name}</h3>
-                                            {m.verificationStatus === "APPROVED" && (
-                                                <span className="verified-badge">✅ Verified</span>
-                                            )}
-                                        </div>
-                                        <div style={{ textAlign: "right" }}>
-                                            {renderStars(Math.round(m.averageRating))}
-                                            <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 2 }}>
-                                                {m.averageRating.toFixed(1)} ({m.totalReviews} reviews)
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="mechanic-meta">
-                                        {m.specialty && <span>🔧 {m.specialty}</span>}
-                                        {m.location && <span>📍 {m.location}</span>}
-                                        {m.phone && <span>📞 {m.phone}</span>}
-                                    </div>
-                                    {m.verificationStatus === "APPROVED" && (
-                                        <button
-                                            className="btn btn-primary btn-sm"
-                                            onClick={() => {
-                                                setBookingModal(m);
-                                                setBookingError("");
-                                                setBookingSuccess("");
-                                            }}
-                                            style={{ marginTop: 8 }}
-                                        >
-                                            📅 Book Appointment
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </>
+                <MechanicMapDynamic onBook={handleMapBook} />
             )}
 
             {tab === "bookings" && (
@@ -364,7 +278,7 @@ export default function MotoristDashboard() {
                 <div className="modal-overlay" onClick={() => setBookingModal(null)}>
                     <div className="modal" onClick={(e) => e.stopPropagation()}>
                         <h2 className="modal-title">
-                            Book {bookingModal.user.name}
+                            Book {bookingModal.user?.name || bookingMechanicName}
                         </h2>
                         {bookingError && <div className="alert alert-error">{bookingError}</div>}
                         {bookingSuccess && <div className="alert alert-success">{bookingSuccess}</div>}

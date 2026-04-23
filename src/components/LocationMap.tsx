@@ -1,17 +1,41 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// Mechanic pin icon
+const mechanicIcon = L.icon({
+    iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41],
+});
+
+L.Marker.prototype.options.icon = mechanicIcon;
 
 interface LocationMapProps {
     bookingId: string;
     isMechanic?: boolean;
 }
 
+// Helper: smoothly re-center map on new coordinates
+function RecenterOnUpdate({ lat, lng }: { lat: number; lng: number }) {
+    const map = useMap();
+    useEffect(() => {
+        map.setView([lat, lng], map.getZoom(), { animate: true });
+    }, [lat, lng, map]);
+    return null;
+}
+
 export default function LocationMap({ bookingId, isMechanic = false }: LocationMapProps) {
     const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
     const [tracking, setTracking] = useState(false);
     const [error, setError] = useState("");
-    const mapRef = useRef<HTMLDivElement>(null);
     const watchIdRef = useRef<number | null>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -120,26 +144,43 @@ export default function LocationMap({ bookingId, isMechanic = false }: LocationM
                 </button>
             )}
 
-            <div ref={mapRef} style={styles.map}>
+            <div style={styles.mapArea}>
                 {location ? (
-                    <div style={styles.mapContent}>
-                        <div style={styles.mapPin}>📍</div>
-                        <div style={styles.coords}>
-                            <div style={styles.coordLabel}>Latitude</div>
-                            <div style={styles.coordValue}>{location.latitude.toFixed(6)}</div>
-                            <div style={styles.coordLabel}>Longitude</div>
-                            <div style={styles.coordValue}>{location.longitude.toFixed(6)}</div>
-                        </div>
-                        <a
-                            href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn btn-secondary btn-sm"
-                            style={{ marginTop: 12 }}
+                    <>
+                        <MapContainer
+                            center={[location.latitude, location.longitude]}
+                            zoom={15}
+                            style={{ height: "100%", width: "100%", borderRadius: "var(--radius)" }}
+                            scrollWheelZoom={true}
                         >
-                            🗺️ Open in Google Maps
-                        </a>
-                    </div>
+                            <TileLayer
+                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                            />
+                            <RecenterOnUpdate lat={location.latitude} lng={location.longitude} />
+                            <Marker position={[location.latitude, location.longitude]} icon={mechanicIcon}>
+                                <Popup>
+                                    <div style={{ textAlign: "center", fontWeight: 600 }}>
+                                        {isMechanic ? "📍 Your Location" : "🔧 Mechanic Location"}
+                                        <div style={{ fontSize: "0.75rem", color: "#666", marginTop: 4 }}>
+                                            {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
+                                        </div>
+                                    </div>
+                                </Popup>
+                            </Marker>
+                        </MapContainer>
+                        <div style={styles.coordBar}>
+                            <span>{location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}</span>
+                            <a
+                                href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={styles.gmapsLink}
+                            >
+                                🗺️ Google Maps
+                            </a>
+                        </div>
+                    </>
                 ) : (
                     <div style={styles.noLocation}>
                         <span style={{ fontSize: "2rem" }}>🗺️</span>
@@ -200,40 +241,34 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: "0.85rem",
         marginBottom: "12px",
     },
-    map: {
+    mapArea: {
         borderRadius: "var(--radius)",
-        background: "var(--bg-card)",
+        overflow: "hidden",
         border: "1px solid var(--glass-border)",
-        minHeight: "200px",
+        height: "300px",
+        position: "relative" as const,
+    },
+    coordBar: {
         display: "flex",
+        justifyContent: "space-between",
         alignItems: "center",
-        justifyContent: "center",
-    },
-    mapContent: {
-        textAlign: "center" as const,
-        padding: "24px",
-    },
-    mapPin: {
-        fontSize: "3rem",
-        marginBottom: "12px",
-        animation: "bounce 2s ease-in-out infinite",
-    },
-    coords: {
-        display: "grid",
-        gridTemplateColumns: "auto auto",
-        gap: "4px 16px",
-        textAlign: "left" as const,
-    },
-    coordLabel: {
+        padding: "8px 12px",
+        background: "var(--bg-secondary)",
+        borderTop: "1px solid var(--border-color)",
         fontSize: "0.75rem",
-        color: "var(--text-muted)",
-        textTransform: "uppercase" as const,
-        letterSpacing: "0.05em",
-    },
-    coordValue: {
-        fontSize: "0.9rem",
         fontFamily: "var(--font-mono), monospace",
+        color: "var(--text-muted)",
+        position: "absolute" as const,
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 1000,
+    },
+    gmapsLink: {
         color: "var(--primary-light)",
+        textDecoration: "none",
+        fontWeight: 600,
+        fontFamily: "var(--font-sans), system-ui, sans-serif",
     },
     noLocation: {
         textAlign: "center" as const,
@@ -242,6 +277,8 @@ const styles: Record<string, React.CSSProperties> = {
         display: "flex",
         flexDirection: "column" as const,
         alignItems: "center",
+        justifyContent: "center",
+        height: "100%",
         gap: "8px",
     },
 };

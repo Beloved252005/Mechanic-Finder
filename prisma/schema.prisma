@@ -47,6 +47,8 @@ model MechanicProfile {
   userId             String             @unique
   specialty          String?
   location           String?
+  latitude           Float?
+  longitude          Float?
   phone              String?
   documentUrl        String?
   verificationStatus VerificationStatus @default(PENDING)

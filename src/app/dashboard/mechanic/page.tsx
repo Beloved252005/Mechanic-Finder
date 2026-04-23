@@ -3,7 +3,7 @@
 import { useSession } from "next-auth/react";
 import { useState, useEffect, useCallback } from "react";
 import ChatBox from "@/components/ChatBox";
-import LocationMap from "@/components/LocationMap";
+import LocationMap from "@/components/LocationMapDynamic";
 import NotificationButton from "@/components/NotificationButton";
 
 interface Profile {
@@ -35,6 +35,8 @@ export default function MechanicDashboard() {
     const [location, setLocation] = useState("");
     const [phone, setPhone] = useState("");
     const [documentUrl, setDocumentUrl] = useState("");
+    const [latitude, setLatitude] = useState("");
+    const [longitude, setLongitude] = useState("");
     const [profileSaving, setProfileSaving] = useState(false);
     const [profileMsg, setProfileMsg] = useState("");
 
@@ -57,6 +59,8 @@ export default function MechanicDashboard() {
             setLocation(data.location || "");
             setPhone(data.phone || "");
             setDocumentUrl(data.documentUrl || "");
+            setLatitude(data.latitude != null ? String(data.latitude) : "");
+            setLongitude(data.longitude != null ? String(data.longitude) : "");
         }
     }, []);
 
@@ -84,7 +88,14 @@ export default function MechanicDashboard() {
         const res = await fetch("/api/mechanics/profile", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ specialty, location, phone, documentUrl }),
+            body: JSON.stringify({
+                specialty,
+                location,
+                phone,
+                documentUrl,
+                latitude: latitude ? parseFloat(latitude) : null,
+                longitude: longitude ? parseFloat(longitude) : null,
+            }),
         });
         if (res.ok) {
             setProfileMsg("Profile updated successfully!");
@@ -206,6 +217,51 @@ export default function MechanicDashboard() {
                             />
                             <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
                                 Upload your qualification document to a cloud drive and paste the share link here.
+                            </span>
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Workshop Coordinates</label>
+                            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                                <input
+                                    className="form-input"
+                                    placeholder="Latitude (e.g. -17.825)"
+                                    value={latitude}
+                                    onChange={(e) => setLatitude(e.target.value)}
+                                    type="number"
+                                    step="any"
+                                    style={{ flex: 1 }}
+                                />
+                                <input
+                                    className="form-input"
+                                    placeholder="Longitude (e.g. 31.053)"
+                                    value={longitude}
+                                    onChange={(e) => setLongitude(e.target.value)}
+                                    type="number"
+                                    step="any"
+                                    style={{ flex: 1 }}
+                                />
+                            </div>
+                            <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => {
+                                    if (navigator.geolocation) {
+                                        navigator.geolocation.getCurrentPosition(
+                                            (pos) => {
+                                                setLatitude(String(pos.coords.latitude));
+                                                setLongitude(String(pos.coords.longitude));
+                                            },
+                                            (err) => setProfileMsg(`GPS error: ${err.message}`)
+                                        );
+                                    } else {
+                                        setProfileMsg("Geolocation is not supported by your browser");
+                                    }
+                                }}
+                            >
+                                📍 Use My Location
+                            </button>
+                            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginTop: 4 }}>
+                                Set your workshop or service area coordinates so motorists can find you on the map.
                             </span>
                         </div>
                         <button

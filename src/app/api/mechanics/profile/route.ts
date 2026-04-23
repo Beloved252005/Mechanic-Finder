@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { profileSchema, formatZodError } from "@/lib/validations";
+import { ZodError } from "zod";
 
 export async function GET() {
     try {
@@ -33,15 +35,19 @@ export async function PUT(request: Request) {
         }
 
         const body = await request.json();
-        const { specialty, location, phone, documentUrl } = body;
+        const parsed = profileSchema.parse(body);
+        const { specialty, location, phone, documentUrl, latitude, longitude } = parsed;
 
         const profile = await prisma.mechanicProfile.update({
             where: { userId: session.user.id },
-            data: { specialty, location, phone, documentUrl },
+            data: { specialty, location, phone, documentUrl: documentUrl || null, latitude, longitude },
         });
 
         return NextResponse.json(profile);
     } catch (error) {
+        if (error instanceof ZodError) {
+            return NextResponse.json({ error: formatZodError(error) }, { status: 400 });
+        }
         console.error("Error updating profile:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }

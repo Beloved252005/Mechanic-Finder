@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { locationSchema, formatZodError } from "@/lib/validations";
+import { ZodError } from "zod";
 
 // Rate limit: store last update time per booking (in-memory, resets on restart)
 const lastUpdateMap = new Map<string, number>();
@@ -15,11 +17,8 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { bookingId, latitude, longitude } = body;
-
-        if (!bookingId || latitude == null || longitude == null) {
-            return NextResponse.json({ error: "bookingId, latitude, and longitude are required" }, { status: 400 });
-        }
+        const parsed = locationSchema.parse(body);
+        const { bookingId, latitude, longitude } = parsed;
 
         // Verify this mechanic owns this booking and it's IN_PROGRESS
         const profile = await prisma.mechanicProfile.findUnique({
@@ -56,6 +55,9 @@ export async function POST(request: Request) {
 
         return NextResponse.json(locationUpdate, { status: 201 });
     } catch (error) {
+        if (error instanceof ZodError) {
+            return NextResponse.json({ error: formatZodError(error) }, { status: 400 });
+        }
         console.error("Error saving location:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }

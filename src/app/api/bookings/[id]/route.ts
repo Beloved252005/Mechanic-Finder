@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { sendPushToUser } from "@/lib/push";
+import { updateBookingSchema, formatZodError } from "@/lib/validations";
+import { ZodError } from "zod";
 
 export async function PATCH(
     request: Request,
@@ -16,11 +18,8 @@ export async function PATCH(
 
         const { id } = await params;
         const body = await request.json();
-        const { status } = body;
-
-        if (!["APPROVED", "IN_PROGRESS", "COMPLETED", "CANCELLED"].includes(status)) {
-            return NextResponse.json({ error: "Invalid status" }, { status: 400 });
-        }
+        const parsed = updateBookingSchema.parse(body);
+        const { status } = parsed;
 
         const booking = await prisma.booking.findUnique({
             where: { id },
@@ -76,6 +75,9 @@ export async function PATCH(
 
         return NextResponse.json(updated);
     } catch (error) {
+        if (error instanceof ZodError) {
+            return NextResponse.json({ error: formatZodError(error) }, { status: 400 });
+        }
         console.error("Error updating booking:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }
