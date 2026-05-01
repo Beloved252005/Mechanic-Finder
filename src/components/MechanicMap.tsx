@@ -74,12 +74,45 @@ function haversineDistance(
     return R * c;
 }
 
-// Component to recenter the map when user location changes
-function RecenterMap({ lat, lng }: { lat: number; lng: number }) {
+// Estimate travel time based on distance (average city driving ~30km/h)
+function estimateETA(distanceKm: number): string {
+    if (distanceKm < 0.5) return "< 2 min";
+    const minutes = Math.round((distanceKm / 30) * 60);
+    if (minutes < 60) return `~${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    const remainMin = minutes % 60;
+    return `~${hours}h ${remainMin}m`;
+}
+
+// Format distance for display
+function formatDistance(distanceKm: number): string {
+    if (distanceKm < 1) return `${(distanceKm * 1000).toFixed(0)}m`;
+    return `${distanceKm.toFixed(1)}km`;
+}
+
+// Component to auto-fit map bounds to show all markers
+function FitBounds({ userLat, userLng, mechanics }: { userLat: number; userLng: number; mechanics: MechanicWithDistance[] }) {
     const map = useMap();
+    const fittedRef = useRef(false);
+
     useEffect(() => {
-        map.setView([lat, lng], map.getZoom());
-    }, [lat, lng, map]);
+        if (fittedRef.current) return;
+        if (mechanics.length === 0) {
+            map.setView([userLat, userLng], 13);
+            fittedRef.current = true;
+            return;
+        }
+
+        const points: L.LatLngExpression[] = [
+            [userLat, userLng],
+            ...mechanics.map((m) => [m.latitude, m.longitude] as L.LatLngExpression),
+        ];
+
+        const bounds = L.latLngBounds(points);
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+        fittedRef.current = true;
+    }, [userLat, userLng, mechanics, map]);
+
     return null;
 }
 
@@ -94,6 +127,9 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
     const [loading, setLoading] = useState(true);
     const [locationError, setLocationError] = useState("");
     const fetchedRef = useRef(false);
+    const mapRef = useRef<L.Map | null>(null);
+    const markerRefs = useRef<Map<string, L.Marker>>(new Map());
+    const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
     // Get user location
     useEffect(() => {
@@ -147,6 +183,47 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
         }
     }, [userLocation, fetchMechanics]);
 
+    // Fly to a mechanic on the map and open their popup
+    const flyToMechanic = useCallback((mechanic: MechanicWithDistance) => {
+        if (mapRef.current) {
+            mapRef.current.flyTo([mechanic.latitude, mechanic.longitude], 16, {
+                duration: 1.2,
+            });
+            // Open the marker's popup after flying
+            setTimeout(() => {
+                const marker = markerRefs.current.get(mechanic.id);
+                if (marker) marker.openPopup();
+            }, 1300);
+        }
+        setHighlightedId(mechanic.id);
+    }, []);
+
+    // Recenter map on user
+    const recenterOnUser = useCallback(() => {
+        if (mapRef.current && userLocation) {
+            mapRef.current.flyTo([userLocation.lat, userLocation.lng], 13, {
+                duration: 1,
+            });
+        }
+        setHighlightedId(null);
+    }, [userLocation]);
+
+    // Fit all markers in view
+    const fitAllMarkers = useCallback(() => {
+        if (!mapRef.current || !userLocation) return;
+        if (mechanics.length === 0) {
+            mapRef.current.flyTo([userLocation.lat, userLocation.lng], 13, { duration: 1 });
+            return;
+        }
+        const points: L.LatLngExpression[] = [
+            [userLocation.lat, userLocation.lng],
+            ...mechanics.map((m) => [m.latitude, m.longitude] as L.LatLngExpression),
+        ];
+        const bounds = L.latLngBounds(points);
+        mapRef.current.flyToBounds(bounds, { padding: [50, 50], maxZoom: 15, duration: 1 });
+        setHighlightedId(null);
+    }, [userLocation, mechanics]);
+
     if (!userLocation) {
         return (
             <div className="loading-center" style={{ padding: "60px 0" }}>
@@ -180,12 +257,13 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
                     zoom={13}
                     style={{ height: "100%", width: "100%", borderRadius: "var(--radius)" }}
                     scrollWheelZoom={true}
+                    ref={mapRef}
                 >
                     <TileLayer
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     />
-                    <RecenterMap lat={userLocation.lat} lng={userLocation.lng} />
+                    <FitBounds userLat={userLocation.lat} userLng={userLocation.lng} mechanics={mechanics} />
 
                     {/* User location marker */}
                     <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}>
@@ -198,7 +276,14 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
 
                     {/* Mechanic markers */}
                     {mechanics.map((m, index) => (
-                        <Marker key={m.id} position={[m.latitude, m.longitude]} icon={index === 0 ? closestIcon : defaultIcon}>
+                        <Marker
+                            key={m.id}
+                            position={[m.latitude, m.longitude]}
+                            icon={index === 0 ? closestIcon : defaultIcon}
+                            ref={(ref) => {
+                                if (ref) markerRefs.current.set(m.id, ref);
+                            }}
+                        >
                             <Popup>
                                 <div style={mapStyles.popup}>
                                     {index === 0 && (
@@ -213,7 +298,10 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
                                         {" "}{m.rating.toFixed(1)} ({m.totalReviews})
                                     </div>
                                     <div style={mapStyles.popupDistance}>
-                                        📏 {m.distance < 1 ? `${(m.distance * 1000).toFixed(0)}m` : `${m.distance.toFixed(1)}km`} away
+                                        📏 {formatDistance(m.distance)} away
+                                    </div>
+                                    <div style={mapStyles.popupEta}>
+                                        🚗 ETA: {estimateETA(m.distance)}
                                     </div>
                                     <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                                         <button
@@ -229,6 +317,24 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
                         </Marker>
                     ))}
                 </MapContainer>
+
+                {/* Floating map controls */}
+                <div style={mapStyles.floatingControls}>
+                    <button
+                        onClick={recenterOnUser}
+                        style={mapStyles.floatingBtn}
+                        title="Re-center on my location"
+                    >
+                        📍
+                    </button>
+                    <button
+                        onClick={fitAllMarkers}
+                        style={mapStyles.floatingBtn}
+                        title="Show all mechanics"
+                    >
+                        🗺️
+                    </button>
+                </div>
             </div>
 
             {/* Nearby Mechanics List */}
@@ -249,7 +355,12 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
                 ) : (
                     <div className="grid-2">
                         {mechanics.map((m, index) => (
-                            <div key={m.id} className={`card mechanic-card ${index === 0 ? "mechanic-card-nearest" : ""}`}>
+                            <div
+                                key={m.id}
+                                className={`card mechanic-card ${index === 0 ? "mechanic-card-nearest" : ""} ${highlightedId === m.id ? "mechanic-card-highlighted" : ""}`}
+                                onClick={() => flyToMechanic(m)}
+                                style={{ cursor: "pointer" }}
+                            >
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
                                     <div>
                                         <h3 className="mechanic-name">{m.name}</h3>
@@ -277,15 +388,29 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
                                     {m.specialty && <span>🔧 {m.specialty}</span>}
                                     {m.location && <span>📍 {m.location}</span>}
                                     {m.phone && <span>📞 {m.phone}</span>}
-                                    <span className="distance-tag">📏 {m.distance < 1 ? `${(m.distance * 1000).toFixed(0)}m` : `${m.distance.toFixed(1)}km`}</span>
+                                    <span className="distance-tag">📏 {formatDistance(m.distance)}</span>
+                                    <span className="eta-tag">🚗 ETA: {estimateETA(m.distance)}</span>
                                 </div>
-                                <button
-                                    className="btn btn-primary btn-sm"
-                                    onClick={() => onBook(m)}
-                                    style={{ marginTop: 8 }}
-                                >
-                                    📅 Book Appointment
-                                </button>
+                                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                                    <button
+                                        className="btn btn-primary btn-sm"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onBook(m);
+                                        }}
+                                    >
+                                        📅 Book Appointment
+                                    </button>
+                                    <button
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            flyToMechanic(m);
+                                        }}
+                                    >
+                                        🗺️ View on Map
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -301,6 +426,7 @@ const mapStyles: Record<string, React.CSSProperties> = {
         borderRadius: "var(--radius)",
         overflow: "hidden",
         border: "1px solid var(--border-color)",
+        position: "relative",
     },
     popup: {
         minWidth: 180,
@@ -335,5 +461,34 @@ const mapStyles: Record<string, React.CSSProperties> = {
     popupDistance: {
         fontSize: "0.85rem",
         color: "#666",
+    },
+    popupEta: {
+        fontSize: "0.8rem",
+        color: "#2563EB",
+        fontWeight: 600,
+        marginTop: 2,
+    },
+    floatingControls: {
+        position: "absolute" as const,
+        top: 10,
+        right: 10,
+        zIndex: 1000,
+        display: "flex",
+        flexDirection: "column" as const,
+        gap: 6,
+    },
+    floatingBtn: {
+        width: 38,
+        height: 38,
+        borderRadius: "10px",
+        border: "1px solid var(--border-color)",
+        background: "var(--bg-card)",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: "1.1rem",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+        transition: "all 0.2s ease",
     },
 };

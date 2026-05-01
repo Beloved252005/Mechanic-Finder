@@ -69,5 +69,5 @@ export const pushSubscribeSchema = z.object({
 // ───── Helper ─────
 // Extracts user-friendly error messages from ZodError
 export function formatZodError(error: z.ZodError): string {
-    return error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ");
+    return error.issues.map((e) => `${String(e.path.join("."))}: ${e.message}`).join(", ");
 }

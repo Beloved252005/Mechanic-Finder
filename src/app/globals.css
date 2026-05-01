@@ -772,6 +772,25 @@ body {
   color: var(--accent) !important;
 }
 
+.eta-tag {
+  font-weight: 600;
+  color: var(--primary-light) !important;
+  font-size: 0.82rem;
+}
+
+/* Highlighted mechanic card (when clicked to fly-to on map) */
+.mechanic-card-highlighted {
+  border-color: rgba(37, 99, 235, 0.5) !important;
+  box-shadow: 0 0 20px rgba(37, 99, 235, 0.15), var(--shadow-card) !important;
+  transform: translateY(-2px);
+}
+
+/* Floating map control buttons */
+.leaflet-container ~ div button:hover {
+  transform: scale(1.08);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+}
+
 /* ───── Card Entrance Animation ───── */
 .card {
   animation: card-in 0.35s ease-out both;
