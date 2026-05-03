@@ -25,6 +25,18 @@ const closestIcon = L.divIcon({
     popupAnchor: [0, -40],
 });
 
+// Offline mechanic marker (grey, semi-transparent)
+const offlineIcon = L.icon({
+    iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41],
+    className: "offline-marker",
+});
+
 // Blue circle marker for user location
 const userIcon = L.divIcon({
     html: `<div class="user-location-dot"><div class="user-location-pulse"></div></div>`,
@@ -36,6 +48,18 @@ const userIcon = L.divIcon({
 
 L.Marker.prototype.options.icon = defaultIcon;
 
+const SPECIALIZATION_LABELS: Record<string, string> = {
+    ENGINE_REPAIR: "Engine Repair",
+    ELECTRICAL_SYSTEMS: "Electrical Systems",
+    FUEL_SYSTEM: "Fuel System",
+    TYRES_AND_SUSPENSION: "Tyres & Suspension",
+    TRANSMISSION: "Transmission",
+    BODY_WORK: "Body Work",
+    AIR_CONDITIONING: "Air Conditioning",
+    GENERAL_SERVICE: "General Service",
+    OTHER: "Other",
+};
+
 interface NearbyMechanic {
     id: string;
     name: string;
@@ -46,6 +70,9 @@ interface NearbyMechanic {
     totalReviews: number;
     location: string | null;
     phone: string | null;
+    isOnline?: boolean;
+    lastSeen?: string | null;
+    specialization?: string;
 }
 
 interface MechanicWithDistance extends NearbyMechanic {
@@ -126,10 +153,14 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
     const [mechanics, setMechanics] = useState<MechanicWithDistance[]>([]);
     const [loading, setLoading] = useState(true);
     const [locationError, setLocationError] = useState("");
-    const fetchedRef = useRef(false);
     const mapRef = useRef<L.Map | null>(null);
     const markerRefs = useRef<Map<string, L.Marker>>(new Map());
     const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+    // Filter state
+    const [filterOnlineOnly, setFilterOnlineOnly] = useState(false);
+    const [filterVerification, setFilterVerification] = useState("APPROVED");
+    const [filterSpecs, setFilterSpecs] = useState<string[]>([]);
 
     // Get user location
     useEffect(() => {
@@ -155,13 +186,16 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
         );
     }, []);
 
-    // Fetch nearby mechanics once
+    // Fetch nearby mechanics with filters
     const fetchMechanics = useCallback(async (userLat: number, userLng: number) => {
-        if (fetchedRef.current) return;
-        fetchedRef.current = true;
-
+        setLoading(true);
         try {
-            const res = await fetch("/api/mechanics/nearby");
+            const params = new URLSearchParams();
+            if (filterOnlineOnly) params.set("onlineOnly", "true");
+            if (filterVerification) params.set("verificationStatus", filterVerification);
+            if (filterSpecs.length > 0) params.set("specialization", filterSpecs.join(","));
+            const qs = params.toString();
+            const res = await fetch(`/api/mechanics/nearby${qs ? `?${qs}` : ""}`);
             if (res.ok) {
                 const data: NearbyMechanic[] = await res.json();
                 const withDistance = data.map((m) => ({
@@ -175,7 +209,7 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
             // silent
         }
         setLoading(false);
-    }, []);
+    }, [filterOnlineOnly, filterVerification, filterSpecs]);
 
     useEffect(() => {
         if (userLocation) {
@@ -250,6 +284,60 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
                 </div>
             )}
 
+            {/* Filter Panel */}
+            <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap", padding: "16px", borderRadius: "var(--radius)", background: "var(--bg-card)", border: "1px solid var(--border-color)" }}>
+                {/* Availability */}
+                <div style={{ minWidth: 140 }}>
+                    <div style={{ fontWeight: 700, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8, color: "var(--text-muted)" }}>Availability</div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: "0.9rem", marginBottom: 4 }}>
+                        <input type="radio" name="availability" checked={!filterOnlineOnly} onChange={() => setFilterOnlineOnly(false)} /> All Mechanics
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: "0.9rem" }}>
+                        <input type="radio" name="availability" checked={filterOnlineOnly} onChange={() => setFilterOnlineOnly(true)} /> Online Only
+                    </label>
+                </div>
+
+                {/* Verification */}
+                <div style={{ minWidth: 140 }}>
+                    <div style={{ fontWeight: 700, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8, color: "var(--text-muted)" }}>Verification</div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: "0.9rem", marginBottom: 4 }}>
+                        <input type="radio" name="verification" checked={filterVerification === ""} onChange={() => setFilterVerification("")} /> All
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: "0.9rem", marginBottom: 4 }}>
+                        <input type="radio" name="verification" checked={filterVerification === "APPROVED"} onChange={() => setFilterVerification("APPROVED")} /> Verified Only
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: "0.9rem" }}>
+                        <input type="radio" name="verification" checked={filterVerification === "PENDING"} onChange={() => setFilterVerification("PENDING")} /> Unverified Only
+                    </label>
+                </div>
+
+                {/* Specialization */}
+                <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontWeight: 700, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8, color: "var(--text-muted)" }}>Specialization</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
+                        {Object.entries(SPECIALIZATION_LABELS).map(([value, label]) => (
+                            <label key={value} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: "0.85rem" }}>
+                                <input
+                                    type="checkbox"
+                                    checked={filterSpecs.includes(value)}
+                                    onChange={(e) => {
+                                        if (e.target.checked) {
+                                            setFilterSpecs((prev) => [...prev, value]);
+                                        } else {
+                                            setFilterSpecs((prev) => prev.filter((s) => s !== value));
+                                        }
+                                    }}
+                                />
+                                {label}
+                            </label>
+                        ))}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 4 }}>
+                        {filterSpecs.length === 0 ? "Showing all specializations" : `${filterSpecs.length} selected`}
+                    </div>
+                </div>
+            </div>
+
             {/* Map Section */}
             <div style={mapStyles.mapWrapper}>
                 <MapContainer
@@ -275,21 +363,35 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
                     </Marker>
 
                     {/* Mechanic markers */}
-                    {mechanics.map((m, index) => (
+                    {mechanics.map((m, index) => {
+                        const isOffline = m.isOnline === false;
+                        const markerIcon = index === 0 && !isOffline ? closestIcon : isOffline ? offlineIcon : defaultIcon;
+                        return (
                         <Marker
                             key={m.id}
                             position={[m.latitude, m.longitude]}
-                            icon={index === 0 ? closestIcon : defaultIcon}
+                            icon={markerIcon}
+                            opacity={isOffline ? 0.5 : 1}
                             ref={(ref) => {
                                 if (ref) markerRefs.current.set(m.id, ref);
                             }}
                         >
                             <Popup>
                                 <div style={mapStyles.popup}>
-                                    {index === 0 && (
+                                    {index === 0 && !isOffline && (
                                         <div style={mapStyles.nearestBadge}>⭐ Nearest Mechanic</div>
                                     )}
+                                    {isOffline && (
+                                        <div style={{ background: "#9ca3af", color: "#fff", fontWeight: 600, fontSize: "0.7rem", padding: "2px 8px", borderRadius: 8, marginBottom: 6, display: "inline-block" }}>
+                                            Offline
+                                        </div>
+                                    )}
                                     <div style={mapStyles.popupName}>{m.name}</div>
+                                    {m.specialization && (
+                                        <div style={{ fontSize: "0.8rem", color: "#2563EB", fontWeight: 600, marginBottom: 2 }}>
+                                            🏷️ {SPECIALIZATION_LABELS[m.specialization] || m.specialization}
+                                        </div>
+                                    )}
                                     {m.specialty && (
                                         <div style={mapStyles.popupSpecialty}>🔧 {m.specialty}</div>
                                     )}
@@ -315,7 +417,8 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
                                 </div>
                             </Popup>
                         </Marker>
-                    ))}
+                        );
+                    })}
                 </MapContainer>
 
                 {/* Floating map controls */}
@@ -385,11 +488,15 @@ export default function MechanicMap({ onBook }: MechanicMapProps) {
                                     </div>
                                 </div>
                                 <div className="mechanic-meta">
+                                    {m.specialization && <span>🏷️ {SPECIALIZATION_LABELS[m.specialization] || m.specialization}</span>}
                                     {m.specialty && <span>🔧 {m.specialty}</span>}
                                     {m.location && <span>📍 {m.location}</span>}
                                     {m.phone && <span>📞 {m.phone}</span>}
                                     <span className="distance-tag">📏 {formatDistance(m.distance)}</span>
                                     <span className="eta-tag">🚗 ETA: {estimateETA(m.distance)}</span>
+                                    <span style={{ color: m.isOnline ? "#22c55e" : "#9ca3af", fontWeight: 600 }}>
+                                        {m.isOnline ? "🟢 Online" : "⚫ Offline"}
+                                    </span>
                                 </div>
                                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                                     <button

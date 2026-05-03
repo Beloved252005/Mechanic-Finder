@@ -6,6 +6,18 @@ import ChatBox from "@/components/ChatBox";
 import LocationMap from "@/components/LocationMapDynamic";
 import NotificationButton from "@/components/NotificationButton";
 
+const SPECIALIZATION_LABELS: Record<string, string> = {
+    ENGINE_REPAIR: "Engine Repair",
+    ELECTRICAL_SYSTEMS: "Electrical Systems",
+    FUEL_SYSTEM: "Fuel System",
+    TYRES_AND_SUSPENSION: "Tyres & Suspension",
+    TRANSMISSION: "Transmission",
+    BODY_WORK: "Body Work",
+    AIR_CONDITIONING: "Air Conditioning",
+    GENERAL_SERVICE: "General Service",
+    OTHER: "Other",
+};
+
 interface Profile {
     id: string;
     specialty: string | null;
@@ -15,6 +27,9 @@ interface Profile {
     verificationStatus: string;
     averageRating: number;
     totalReviews: number;
+    isOnline?: boolean;
+    lastSeen?: string | null;
+    specialization?: string;
 }
 
 interface Booking {
@@ -37,8 +52,14 @@ export default function MechanicDashboard() {
     const [documentUrl, setDocumentUrl] = useState("");
     const [latitude, setLatitude] = useState("");
     const [longitude, setLongitude] = useState("");
+    const [specialization, setSpecialization] = useState("GENERAL_SERVICE");
     const [profileSaving, setProfileSaving] = useState(false);
     const [profileMsg, setProfileMsg] = useState("");
+
+    // Online/Offline status
+    const [isOnline, setIsOnline] = useState(false);
+    const [lastSeen, setLastSeen] = useState<string | null>(null);
+    const [statusLoading, setStatusLoading] = useState(false);
 
     // Bookings
     const [bookings, setBookings] = useState<Booking[]>([]);
@@ -61,6 +82,9 @@ export default function MechanicDashboard() {
             setDocumentUrl(data.documentUrl || "");
             setLatitude(data.latitude != null ? String(data.latitude) : "");
             setLongitude(data.longitude != null ? String(data.longitude) : "");
+            setSpecialization(data.specialization || "GENERAL_SERVICE");
+            setIsOnline(data.isOnline ?? false);
+            setLastSeen(data.lastSeen ?? null);
         }
     }, []);
 
@@ -82,6 +106,25 @@ export default function MechanicDashboard() {
         if (tab === "bookings") fetchBookings();
     }, [tab, fetchBookings]);
 
+    const handleToggleStatus = async () => {
+        setStatusLoading(true);
+        try {
+            const res = await fetch("/api/mechanics/status", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ isOnline: !isOnline }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setIsOnline(data.isOnline);
+                setLastSeen(data.lastSeen);
+            }
+        } catch {
+            // silent
+        }
+        setStatusLoading(false);
+    };
+
     const handleSaveProfile = async () => {
         setProfileSaving(true);
         setProfileMsg("");
@@ -95,6 +138,7 @@ export default function MechanicDashboard() {
                 documentUrl,
                 latitude: latitude ? parseFloat(latitude) : null,
                 longitude: longitude ? parseFloat(longitude) : null,
+                specialization,
             }),
         });
         if (res.ok) {
@@ -134,6 +178,83 @@ export default function MechanicDashboard() {
                     <p className="page-subtitle">Welcome, {session?.user?.name}!</p>
                 </div>
                 <NotificationButton />
+            </div>
+
+            {/* Online / Offline Status Toggle */}
+            <div
+                style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 16,
+                    padding: "16px 20px",
+                    borderRadius: "var(--radius)",
+                    background: isOnline
+                        ? "linear-gradient(135deg, rgba(34,197,94,0.1), rgba(34,197,94,0.05))"
+                        : "linear-gradient(135deg, rgba(156,163,175,0.1), rgba(156,163,175,0.05))",
+                    border: `1px solid ${isOnline ? "rgba(34,197,94,0.3)" : "var(--border-color)"}`,
+                    marginBottom: 24,
+                    transition: "all 0.3s ease",
+                }}
+            >
+                {/* Status dot */}
+                <div
+                    style={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: "50%",
+                        background: isOnline ? "#22c55e" : "#9ca3af",
+                        boxShadow: isOnline ? "0 0 8px rgba(34,197,94,0.5)" : "none",
+                        flexShrink: 0,
+                        transition: "all 0.3s ease",
+                    }}
+                />
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: "1rem" }}>
+                        {isOnline ? "You are Online" : "You are Offline"}
+                    </div>
+                    {!isOnline && lastSeen && (
+                        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 2 }}>
+                            Last seen: {new Date(lastSeen).toLocaleString()}
+                        </div>
+                    )}
+                </div>
+                {/* Toggle switch */}
+                <button
+                    onClick={handleToggleStatus}
+                    disabled={statusLoading}
+                    style={{
+                        position: "relative",
+                        width: 56,
+                        height: 30,
+                        borderRadius: 15,
+                        border: "none",
+                        cursor: statusLoading ? "wait" : "pointer",
+                        background: isOnline
+                            ? "linear-gradient(135deg, #22c55e, #16a34a)"
+                            : "#d1d5db",
+                        transition: "background 0.3s ease",
+                        flexShrink: 0,
+                        padding: 0,
+                    }}
+                    aria-label={isOnline ? "Go offline" : "Go online"}
+                >
+                    <div
+                        style={{
+                            position: "absolute",
+                            top: 3,
+                            left: isOnline ? 29 : 3,
+                            width: 24,
+                            height: 24,
+                            borderRadius: "50%",
+                            background: "#fff",
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                            transition: "left 0.3s ease",
+                        }}
+                    />
+                </button>
+                <span style={{ fontSize: "0.85rem", fontWeight: 600, minWidth: 90, textAlign: "right" }}>
+                    {statusLoading ? "Updating..." : isOnline ? "I am Available" : "I am Unavailable"}
+                </span>
             </div>
 
             {/* Quick Stats */}
@@ -262,6 +383,23 @@ export default function MechanicDashboard() {
                             </button>
                             <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginTop: 4 }}>
                                 Set your workshop or service area coordinates so motorists can find you on the map.
+                            </span>
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Specialization</label>
+                            <select
+                                className="form-select"
+                                value={specialization}
+                                onChange={(e) => setSpecialization(e.target.value)}
+                            >
+                                {Object.entries(SPECIALIZATION_LABELS).map(([value, label]) => (
+                                    <option key={value} value={value}>
+                                        {label}
+                                    </option>
+                                ))}
+                            </select>
+                            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                                Choose your primary area of expertise so motorists can find you by service type.
                             </span>
                         </div>
                         <button

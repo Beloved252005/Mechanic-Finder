@@ -50,6 +50,17 @@ export const profileSchema = z.object({
     documentUrl: z.string().url("Invalid URL").optional().nullable().or(z.literal("")),
     latitude: z.number().min(-90).max(90).optional().nullable(),
     longitude: z.number().min(-180).max(180).optional().nullable(),
+    specialization: z.enum([
+        "ENGINE_REPAIR",
+        "ELECTRICAL_SYSTEMS",
+        "FUEL_SYSTEM",
+        "TYRES_AND_SUSPENSION",
+        "TRANSMISSION",
+        "BODY_WORK",
+        "AIR_CONDITIONING",
+        "GENERAL_SERVICE",
+        "OTHER",
+    ]).optional().default("GENERAL_SERVICE"),
 });
 
 // ───── Location ─────

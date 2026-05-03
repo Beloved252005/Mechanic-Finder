@@ -36,11 +36,11 @@ export async function PUT(request: Request) {
 
         const body = await request.json();
         const parsed = profileSchema.parse(body);
-        const { specialty, location, phone, documentUrl, latitude, longitude } = parsed;
+        const { specialty, location, phone, documentUrl, latitude, longitude, specialization } = parsed;
 
         const profile = await prisma.mechanicProfile.update({
             where: { userId: session.user.id },
-            data: { specialty, location, phone, documentUrl: documentUrl || null, latitude, longitude },
+            data: { specialty, location, phone, documentUrl: documentUrl || null, latitude, longitude, specialization },
         });
 
         return NextResponse.json(profile);

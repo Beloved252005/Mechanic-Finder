@@ -791,6 +791,12 @@ body {
   box-shadow: 0 4px 12px rgba(0,0,0,0.18);
 }
 
+/* Offline mechanic marker styling */
+.offline-marker {
+  filter: grayscale(100%) !important;
+  opacity: 0.5 !important;
+}
+
 /* ───── Card Entrance Animation ───── */
 .card {
   animation: card-in 0.35s ease-out both;
